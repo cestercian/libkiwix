@@ -81,10 +81,18 @@ function quasiUriEncode(s, specialSymbols) {
   return s;
 }
 
+function showSpinner() {
+  const loader = document.getElementById("kiwix__loader");
+  loader.style.display = "flex";
+}
+
 function performSearch() {
   const searchbox = document.getElementById('kiwixsearchbox');
   if (!searchbox.value.trim()) { return;}
   const q = encodeURIComponent(searchbox.value);
+
+  showSpinner();
+
   gotoUrl(`/search?books.name=${currentBook}&pattern=${q}&userlang=${viewerState.uiLanguage}`);
 }
 
@@ -121,7 +129,11 @@ function setCurrentBook(book, title) {
   currentBook = book;
   currentBookTitle = title;
   setTitle(homeButton, $t("home-button-text", {BOOK_TITLE: title}));
-  homeButton.innerHTML = `<button>${title}</button>`;
+  // `title` is untrusted book metadata (fetched from `./raw/<book>/meta/Title`);
+  // assign it via `textContent`, like `setTitle()` above does for the same
+  // value, instead of interpolating it into markup passed to `innerHTML`.
+  homeButton.innerHTML = '<button></button>';
+  homeButton.querySelector('button').textContent = title;
   bookUIGroup.style.display = 'inline';
   updateSearchBoxForBookChange();
 }
@@ -499,7 +511,9 @@ function setupSuggestions() {
           // url can't contain any double quote and/or backslash symbols
           // since they should have been URI-encoded. Therefore putting it
           // inside double quotes should result in valid javascript.
-          const jsAction = `gotoUrl("${url}")`;
+          const jsAction = data.value.kind == "path"
+            ? `gotoUrl("${url}")`
+            : `showSpinner(); gotoUrl("${url}")`;
           const linkText = htmlDecode(data.value.label);
           item.innerHTML = makeJSLink(jsAction, linkText, 'class="suggest"');
         },

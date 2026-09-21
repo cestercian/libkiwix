@@ -53,7 +53,9 @@
     function queryUrlBuilder() {
         let url = `${root}/catalog/v2/entries?`;
         url += Object.keys(incrementalLoadingParams).map(key => `${key}=${incrementalLoadingParams[key]}`).join("&");
-        params.forEach((value, key) => {url+= value ? `&${key}=${value}` : ''});
+        if ( params.size ) {
+          url += `&${params}`;
+        }
         return (url);
     }
 
@@ -64,18 +66,18 @@
           date.setTime(date.getTime() + ttl);
           exp = `expires=${date.toUTCString()};`;
         }
-        document.cookie = `${cookieName}=${cookieValue};${exp}sameSite=Strict`;
+        document.cookie = `${cookieName}=${encodeURIComponent(cookieValue)};${exp}sameSite=Strict`;
     }
 
     function getCookie(cookieName) {
         const name = cookieName + "=";
         let result;
-        decodeURIComponent(document.cookie).split('; ').forEach(val => {
-            if (val.indexOf(name) === 0) {
+        document.cookie.split('; ').forEach(val => {
+            if (val.startsWith(name)) {
                 result = val.substring(name.length);
             }
         });
-        return result;
+        return result === undefined ? result : decodeURIComponent(result);
     }
 
     function humanFriendlyNumStr(num, precision) {
@@ -114,7 +116,9 @@
     }
 
     function htmlEncode(str) {
-        return str.replace(/[\u00A0-\u9999<>\&]/gim, (i) => `&#${i.charCodeAt(0)};`);
+        // Also encode the quote characters so this stays safe to use inside
+        // a quoted HTML attribute value, not only inside element text content.
+        return str.replace(/[\u00A0-\u9999<>\&"']/gim, (i) => `&#${i.charCodeAt(0)};`);
     }
 
     function viewPortToCount(){
@@ -125,6 +129,14 @@
     function getInnerHtml(node, query) {
         const queryNode = node.querySelector(query);
         return queryNode != null ? queryNode.innerHTML : "";
+    }
+
+    // Unlike getInnerHtml() this returns the plain text value of the node
+    // rather than its (X)HTML serialization, so that the result can be fed to
+    // htmlEncode() without double-encoding.
+    function getTextContent(node, query) {
+        const queryNode = node.querySelector(query);
+        return queryNode != null ? queryNode.textContent : "";
     }
 
     function generateTagLink(tagValue) {
@@ -163,7 +175,7 @@
         urlComponents.pop(); // drop 'content' component
         const viewerLink = urlComponents.join('/') + `/viewer#${bookName}`;
 
-        return `<a class="book__link" href="${viewerLink}" data-hover="Preview">${html}</a>`;
+        return `<a class="book__link" href="${viewerLink}" data-hover="Preview" draggable="false">${html}</a>`;
     }
 
     function generateBookHtml(book, sort = false) {
@@ -173,8 +185,8 @@
                 iconUrl = link.getAttribute('href');
             }
         });
-        const title =  getInnerHtml(book, 'title');
-        const description = getInnerHtml(book, 'summary');
+        const title = htmlEncode(getTextContent(book, 'title'));
+        const description = htmlEncode(getTextContent(book, 'summary'));
         const id = getInnerHtml(book, 'id');
         const langCodesList = getInnerHtml(book, 'language').split(',');
         const langCode = langCodesList.length == 1 ? langCodesList[0] : 'mul';
@@ -226,6 +238,37 @@
             </div>
             ${downloadButtonHtml(downloadLink, humanFriendlyZimSize)}
             </div></div>`;
+
+        const bookLink = divTag.querySelector('.book__link');
+        if (bookLink) {
+            let pointerStart;
+            let dragged = false;
+            bookLink.addEventListener('pointerdown', (event) => {
+                pointerStart = {x: event.clientX, y: event.clientY};
+                dragged = false;
+            });
+            bookLink.addEventListener('pointermove', (event) => {
+                if (pointerStart && event.buttons !== 0 &&
+                    (Math.abs(event.clientX - pointerStart.x) > 5 ||
+                     Math.abs(event.clientY - pointerStart.y) > 5)) {
+                    dragged = true;
+                }
+            });
+            bookLink.addEventListener('pointerup', () => {
+                pointerStart = undefined;
+                setTimeout(() => { dragged = false; }, 0);
+            });
+            bookLink.addEventListener('pointercancel', () => {
+                pointerStart = undefined;
+                dragged = false;
+            });
+            bookLink.addEventListener('click', (event) => {
+                if (dragged) {
+                    event.preventDefault();
+                    dragged = false;
+                }
+            });
+        }
         return divTag;
     }
 
@@ -285,26 +328,26 @@
                     <div class="modal-content">
                         <div class="modal-regular-download">
                             <a href="${downloadLink}" download>
-                                <img src="${root}/skin/download.png?KIWIXCACHEID" alt="${$t("direct-download-alt-text")}" />
+                                <img src="${root}/skin/download.svg?KIWIXCACHEID" alt="${$t("direct-download-alt-text")}" />
                                 <div>${$t("direct-download-link-text")}</div>
                             </a>
                         </div>
                         <div class="modal-regular-download">
                             <a href="${downloadLink}.sha256" download>
-                                <img src="${root}/skin/hash.png?KIWIXCACHEID" alt="${$t("hash-download-alt-text")}" />
+                                <img src="${root}/skin/hash.svg?KIWIXCACHEID" alt="${$t("hash-download-alt-text")}" />
                                 <div>${$t("hash-download-link-text")}</div>
                             </a>
                         </div>
                         ${magnetLink ?
                         `<div class="modal-regular-download">
                             <a href="${magnetLink}" target="_blank">
-                                <img src="${root}/skin/magnet.png?KIWIXCACHEID" alt="${$t("magnet-alt-text")}" />
+                                <img src="${root}/skin/magnet.svg?KIWIXCACHEID" alt="${$t("magnet-alt-text")}" />
                                 <div>${$t("magnet-link-text")}</div>
                             </a>
                         </div>` : ``}
                         <div class="modal-regular-download">
                             <a href="${downloadLink}.torrent" download>
-                                <img src="${root}/skin/bittorrent.png?KIWIXCACHEID" alt="${$t("torrent-download-alt-text")}" />
+                                <img src="${root}/skin/bittorrent.svg?KIWIXCACHEID" alt="${$t("torrent-download-alt-text")}" />
                                 <div>${$t("torrent-download-link-text")}</div>
                             </a>
                         </div>
